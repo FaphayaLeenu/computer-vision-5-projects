@@ -4,3 +4,6 @@ __pycache__/
 .ipynb_checkpoints/
 
 01_sign_language_recognition/data/
+02_multi_object_tracking/*.mp4
+02_multi_object_tracking/*.pt
+02_multi_object_tracking/*:Zone.Identifier
