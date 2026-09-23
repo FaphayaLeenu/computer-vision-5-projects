@@ -28,11 +28,26 @@ The project can be demonstrated using a user-provided video or a public multi-ob
 - Ultralytics
 
 ## Results
-The system successfully detects and tracks objects in the input video and generates a processed video with bounding boxes and tracking IDs.
 
-Output:
+The system successfully detects and tracks multiple objects in the input video using YOLO and ByteTrack. Each detected object is assigned a tracking ID that is maintained across consecutive frames.
+
+### Tracking Frame 1
+
+![Tracking Frame 1](screenshots/tracking_frame_1.jpg)
+
+### Tracking Frame 2
+
+![Tracking Frame 2](screenshots/tracking_frame_2.jpg)
+
+### Tracking Frame 3
+
+![Tracking Frame 3](screenshots/tracking_frame_3.jpg)
+
+### Output
+
+The complete processed tracking video is generated as:
+
 `results/tracked_output.mp4`
-
 ## Performance Evaluation
 The system is evaluated qualitatively by observing:
 - Object detection
