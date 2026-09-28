@@ -1,103 +1,280 @@
-import tensorflow as tf
+import os
+import glob
 import numpy as np
+import tensorflow as tf
 import cv2
 import matplotlib.pyplot as plt
-import os
 
-# -----------------------------
-# Settings
-# -----------------------------
-IMAGE_PATH = "input.jpg"
-OUTPUT_DIR = "results"
+# --------------------------------------------------
+# SETTINGS
+# --------------------------------------------------
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+IMG_SIZE = (160, 160)
+MODEL_PATH = "outputs/cats_dogs_model.keras"
 
-# -----------------------------
-# Load pretrained MobileNetV2
-# -----------------------------
-model = tf.keras.applications.MobileNetV2(
-    weights="imagenet"
+os.makedirs("results", exist_ok=True)
+
+# --------------------------------------------------
+# LOAD MODEL
+# --------------------------------------------------
+
+model = tf.keras.models.load_model(MODEL_PATH)
+
+print("Model loaded successfully.")
+
+# --------------------------------------------------
+# FIND MOBILENETV2 INSIDE THE MODEL
+# --------------------------------------------------
+
+def find_model_with_conv(model):
+
+    for layer in model.layers:
+
+        # Check whether this layer contains convolutional layers
+        if isinstance(layer, tf.keras.Model):
+
+            for sub_layer in layer.layers:
+
+                if isinstance(sub_layer, tf.keras.layers.Conv2D):
+                    return layer
+
+                # Check deeper nested models
+                if isinstance(sub_layer, tf.keras.Model):
+
+                    result = find_model_with_conv(sub_layer)
+
+                    if result is not None:
+                        return result
+
+    return None
+
+
+base_model = find_model_with_conv(model)
+
+if base_model is None:
+    raise ValueError("Could not find MobileNetV2 inside the model.")
+
+print("Feature model:", base_model.name)
+
+# --------------------------------------------------
+# FIND LAST CONVOLUTIONAL LAYER
+# --------------------------------------------------
+
+conv_layer = None
+
+for layer in reversed(base_model.layers):
+
+    if isinstance(layer, tf.keras.layers.Conv2D):
+        conv_layer = layer
+        break
+
+if conv_layer is None:
+    raise ValueError("No convolutional layer found.")
+
+print("Grad-CAM layer:", conv_layer.name)
+
+# --------------------------------------------------
+# FIND CLASSIFIER HEAD
+# --------------------------------------------------
+
+gap_layer = None
+dropout_layer = None
+dense_layer = None
+
+for layer in model.layers:
+
+    if isinstance(
+        layer,
+        tf.keras.layers.GlobalAveragePooling2D
+    ):
+        gap_layer = layer
+
+    elif isinstance(
+        layer,
+        tf.keras.layers.Dropout
+    ):
+        dropout_layer = layer
+
+    elif isinstance(
+        layer,
+        tf.keras.layers.Dense
+    ):
+        dense_layer = layer
+
+if gap_layer is None:
+    raise ValueError("GlobalAveragePooling2D layer not found.")
+
+if dense_layer is None:
+    raise ValueError("Dense classification layer not found.")
+
+# --------------------------------------------------
+# VALIDATION IMAGE
+# --------------------------------------------------
+
+image_paths = (
+    glob.glob("dataset/val/cat/*") +
+    glob.glob("dataset/val/dog/*")
 )
 
-# -----------------------------
-# Load and preprocess image
-# -----------------------------
-img = tf.keras.utils.load_img(
-    IMAGE_PATH,
-    target_size=(224, 224)
+if len(image_paths) == 0:
+    raise FileNotFoundError(
+        "No validation images found."
+    )
+
+image_path = image_paths[0]
+
+print("Using image:")
+print(image_path)
+
+# --------------------------------------------------
+# LOAD IMAGE
+# --------------------------------------------------
+
+original = cv2.imread(image_path)
+
+if original is None:
+    raise ValueError(
+        "Could not read the selected image."
+    )
+
+original_rgb = cv2.cvtColor(
+    original,
+    cv2.COLOR_BGR2RGB
 )
 
-img_array = tf.keras.utils.img_to_array(img)
-img_array = np.expand_dims(img_array, axis=0)
-
-processed_img = tf.keras.applications.mobilenet_v2.preprocess_input(
-    img_array.copy()
+image = cv2.resize(
+    original_rgb,
+    IMG_SIZE
 )
 
-# -----------------------------
-# Prediction
-# -----------------------------
-predictions = model.predict(processed_img, verbose=0)
-
-predicted_class = np.argmax(predictions[0])
-confidence = predictions[0][predicted_class]
-
-decoded = tf.keras.applications.mobilenet_v2.decode_predictions(
-    predictions,
-    top=1
-)[0][0]
-
-label = decoded[1]
-confidence = decoded[2]
-
-print(f"Predicted object: {label}")
-print(f"Confidence: {confidence * 100:.2f}%")
-
-# -----------------------------
-# Find last convolution layer
-# -----------------------------
-last_conv_layer = model.get_layer("Conv_1")
-
-grad_model = tf.keras.models.Model(
-    model.inputs,
-    [last_conv_layer.output, model.output]
+input_image = np.expand_dims(
+    image.astype(np.float32),
+    axis=0
 )
 
-# -----------------------------
-# Calculate Grad-CAM
-# -----------------------------
+# --------------------------------------------------
+# MOBILE NET PREPROCESSING
+# --------------------------------------------------
+
+preprocessed = tf.keras.applications.mobilenet_v2.preprocess_input(
+    input_image
+)
+
+# --------------------------------------------------
+# GRAD-CAM FEATURE MODEL
+# --------------------------------------------------
+
+feature_model = tf.keras.Model(
+    inputs=base_model.input,
+    outputs=conv_layer.output
+)
+
+# --------------------------------------------------
+# CALCULATE GRADIENTS
+# --------------------------------------------------
+
 with tf.GradientTape() as tape:
-    conv_outputs, predictions = grad_model(processed_img)
-    class_output = predictions[:, predicted_class]
 
-grads = tape.gradient(
-    class_output,
+    conv_outputs = feature_model(
+        preprocessed,
+        training=False
+    )
+
+    tape.watch(conv_outputs)
+
+    # Classification head
+    x = gap_layer(conv_outputs)
+
+    if dropout_layer is not None:
+        x = dropout_layer(
+            x,
+            training=False
+        )
+
+    prediction = dense_layer(x)
+
+    probability = prediction[:, 0]
+
+# --------------------------------------------------
+# GRADIENTS
+# --------------------------------------------------
+
+gradients = tape.gradient(
+    probability,
     conv_outputs
 )
 
-pooled_grads = tf.reduce_mean(
-    grads,
-    axis=(0, 1, 2)
+if gradients is None:
+    raise ValueError(
+        "Gradients could not be calculated."
+    )
+
+# Average gradients
+pooled_gradients = tf.reduce_mean(
+    gradients,
+    axis=(1, 2)
 )
 
 conv_outputs = conv_outputs[0]
 
-heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
-heatmap = tf.squeeze(heatmap)
+pooled_gradients = pooled_gradients[0]
 
-heatmap = tf.maximum(heatmap, 0)
-heatmap /= tf.maximum(tf.reduce_max(heatmap), 1e-10)
+# Weighted feature maps
+heatmap = tf.reduce_sum(
+    conv_outputs *
+    pooled_gradients,
+    axis=-1
+)
+
+# ReLU
+heatmap = tf.maximum(
+    heatmap,
+    0
+)
+
+# Normalize
+max_value = tf.reduce_max(heatmap)
+
+if max_value > 0:
+    heatmap /= max_value
 
 heatmap = heatmap.numpy()
 
-# -----------------------------
-# Create heatmap
-# -----------------------------
-original = cv2.imread(IMAGE_PATH)
+# --------------------------------------------------
+# PREDICTION
+# --------------------------------------------------
+
+prediction_value = float(
+    prediction[0][0]
+)
+
+if prediction_value >= 0.5:
+
+    predicted_class = "dog"
+    confidence = prediction_value
+
+else:
+
+    predicted_class = "cat"
+    confidence = 1 - prediction_value
+
+print()
+print("Prediction:", predicted_class)
+print(
+    "Confidence:",
+    f"{confidence * 100:.2f}%"
+)
+
+# --------------------------------------------------
+# CREATE HEATMAP
+# --------------------------------------------------
 
 heatmap_resized = cv2.resize(
     heatmap,
-    (original.shape[1], original.shape[0])
+    (
+        original_rgb.shape[1],
+        original_rgb.shape[0]
+    )
 )
 
 heatmap_uint8 = np.uint8(
@@ -109,49 +286,69 @@ heatmap_color = cv2.applyColorMap(
     cv2.COLORMAP_JET
 )
 
-overlay = cv2.addWeighted(
-    original,
-    0.6,
+heatmap_color = cv2.cvtColor(
     heatmap_color,
-    0.4,
-    0
+    cv2.COLOR_BGR2RGB
 )
 
-# -----------------------------
-# Save result
-# -----------------------------
-output_path = os.path.join(
-    OUTPUT_DIR,
-    "gradcam_result.jpg"
+# --------------------------------------------------
+# OVERLAY
+# --------------------------------------------------
+
+overlay = (
+    0.6 * original_rgb +
+    0.4 * heatmap_color
 )
 
-cv2.imwrite(
-    output_path,
-    overlay
+overlay = np.uint8(
+    np.clip(
+        overlay,
+        0,
+        255
+    )
 )
 
-# -----------------------------
-# Display result
-# -----------------------------
-plt.figure(figsize=(10, 5))
+# --------------------------------------------------
+# SAVE RESULT
+# --------------------------------------------------
+
+output_path = (
+    "results/gradcam_cats_dogs.png"
+)
+
+plt.figure(figsize=(12, 5))
 
 plt.subplot(1, 2, 1)
-plt.imshow(cv2.cvtColor(original, cv2.COLOR_BGR2RGB))
-plt.title(f"Prediction: {label}")
+
+plt.imshow(original_rgb)
+
+plt.title(
+    f"Prediction: {predicted_class}\n"
+    f"Confidence: {confidence * 100:.2f}%"
+)
+
 plt.axis("off")
 
 plt.subplot(1, 2, 2)
-plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
-plt.title("Grad-CAM Explanation")
+
+plt.imshow(overlay)
+
+plt.title(
+    "Grad-CAM Explanation"
+)
+
 plt.axis("off")
 
 plt.tight_layout()
 
 plt.savefig(
-    os.path.join(OUTPUT_DIR, "explainable_ai_result.png"),
-    dpi=200
+    output_path,
+    dpi=200,
+    bbox_inches="tight"
 )
 
-plt.show()
+plt.close()
 
-print("Grad-CAM result saved successfully!")
+print()
+print("Grad-CAM result saved to:")
+print(output_path)

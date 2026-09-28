@@ -1,63 +1,93 @@
-# Explainable AI for Object Recognition
+# Explainable AI for Cat and Dog Classification
 
 ## Problem Statement
 
-Deep learning models can recognize objects accurately, but their decision-making process is often difficult to understand. An explainable computer vision system is required to show which regions of an image influenced the model's prediction.
+Deep learning models can classify images accurately, but their decisions are often difficult to interpret. Explainable AI techniques help visualize which regions of an image influenced the model's prediction.
 
 ## Objective
 
-To develop an explainable object recognition system using a pretrained deep learning model and Grad-CAM to visualize the image regions that contribute to the model's prediction.
+To develop a Cat vs Dog image classification system using transfer learning with MobileNetV2 and explain its predictions using Grad-CAM.
 
-## Dataset / Input
+## Dataset
 
-A sample input image is used to demonstrate object recognition and explainability.
+A Cat and Dog image dataset was used.
 
-The system uses the ImageNet-pretrained MobileNetV2 model.
+Dataset structure:
+
+- Training set: 276 images
+- Validation set: 70 images
+- Classes:
+  - Cat
+  - Dog
+
+The dataset contains images of different cat and dog breeds.
+
+The dataset is stored locally and is excluded from GitHub using `.gitignore`.
 
 ## Methodology
 
-1. Input an image.
-2. Resize the image to 224 × 224 pixels.
-3. Preprocess the image for MobileNetV2.
-4. Predict the object using the pretrained model.
-5. Identify the important feature regions using Grad-CAM.
-6. Generate a heatmap showing the regions influencing the prediction.
-7. Overlay the heatmap on the original image.
-8. Display and save the prediction and explanation.
+The project follows these steps:
+
+1. Load the Cat and Dog image dataset.
+2. Resize images to 160 × 160 pixels.
+3. Apply image augmentation.
+4. Use MobileNetV2 pretrained on ImageNet as the feature extractor.
+5. Add a classification layer for Cat vs Dog prediction.
+6. Train the model using the training dataset.
+7. Evaluate the model using the validation dataset.
+8. Generate a confusion matrix and classification report.
+9. Apply Grad-CAM to visualize important image regions.
+10. Overlay the Grad-CAM heatmap on the original image.
 
 ## Tools and Libraries
 
 - Python
 - TensorFlow
 - MobileNetV2
-- Grad-CAM
 - OpenCV
 - NumPy
 - Matplotlib
+- Scikit-learn
 
 ## Results
 
-The system successfully recognized the input image as a **tabby cat** and generated a Grad-CAM visualization highlighting important regions of the image.
+The model achieved 100% accuracy on the 70-image validation set.
 
-### Prediction and Explanation
+Classification results:
 
-![Explainable AI Result](results/explainable_ai_result.png)
+| Class | Precision | Recall | F1-score |
+|-------|-----------|--------|----------|
+| Cat | 1.00 | 1.00 | 1.00 |
+| Dog | 1.00 | 1.00 | 1.00 |
 
-### Grad-CAM Output
+Overall validation accuracy: **1.00**
 
-![Grad-CAM Result](results/gradcam_result.jpg)
+The result is based on the available 70-image validation set.
 
-## Performance Evaluation
+## Explainable AI Result
 
-The system is evaluated based on:
+Grad-CAM was applied to the trained Cat vs Dog classifier.
 
-- Correctness of the predicted object class
-- Prediction confidence
-- Quality of the Grad-CAM visualization
-- Whether important object regions are highlighted
+The Grad-CAM visualization highlights image regions that contributed to the model's prediction.
 
-For the demonstrated input, the model predicted **tabby** and the Grad-CAM visualization highlighted the cat's important visual regions.
+Example prediction:
+
+- Actual class: Cat
+- Predicted class: Cat
+- Confidence: 99.98%
+
+## Results and Visualizations
+
+- `results/training_accuracy.png`
+- `results/training_loss.png`
+- `results/confusion_matrix.png`
+- `results/classification_report.txt`
+- `results/gradcam_cats_dogs.png`
 
 ## Conclusion
 
-The developed system demonstrates how Explainable AI can make object recognition models more interpretable. Grad-CAM provides a visual explanation by highlighting image regions that contribute to the model's prediction.
+A MobileNetV2 transfer-learning model was developed for Cat vs Dog classification. The model was evaluated on a validation dataset and achieved 100% validation accuracy on the available 70 images.
+
+Grad-CAM was then used to provide a visual explanation of the model's prediction by highlighting important regions of the input image.
+
+This demonstrates how Explainable AI can make image classification models easier to interpret.
